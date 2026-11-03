@@ -71,6 +71,7 @@ iPhone → Cloudflare Worker / Durable Object → WebSocket (TLS) → ESP32 → 
 | [docs/dev-retrospective.md](docs/dev-retrospective.md) | 開発の振り返り。つまずき・原因・解決 |
 | [docs/stage5-procedure.md](docs/stage5-procedure.md) | 障害系試験の手順（診断用） |
 | [docs/circuit/](docs/circuit/) | 赤外線送信回路図（`.tex` / `.pdf` / `.png`） |
+| [docs/circuit/calculation.md](docs/circuit/calculation.md) | 赤外線送信回路の計算（LED 電流、飽和条件、消費電力、電源、実測との比較） |
 
 ## 自分で動かす
 
