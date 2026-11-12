@@ -265,7 +265,8 @@ USBアダプタで運用している間はシリアルログが見えない。�
 - Durable ObjectはESP32のdevice WebSocketを最大1本持つ
 - 新しいdevice接続が来たら古い接続を閉じ、新しい接続だけを正とする
 - WebSocket Hibernation APIで接続を受け入れ、タグ`"device"`を付ける
-- 操作時は`ctx.getWebSockets("device")`で接続を取得する
+- 操作時は`ctx.getWebSockets("device")`で接続を取得する。そのうち`readyState`がOPENのものを、接続時刻（`serializeAttachment`の`connectedAt`）が新しい順に試し、最初に送れた1本で終える
+- 置き換えで閉じた古い接続は、ESP32がすでに捨てているとcloseの応答が来ず、1006で切れるまで（2026-11-12の実測で約17分）一覧に残る。これを送信先に選ばない
 - 通常のJavaScript変数へ接続を保存した前提にしない
 - ESP32からアプリ用メッセージは来ないため、`webSocketMessage()`に業務処理を置かない
 - WebSocketプロトコルpingへのpongはCloudflare runtimeへ任せる
@@ -592,6 +593,7 @@ Emitter ─────────── GND
 - 接続失敗時は1サイクル1回だけ接続を試し、必ず後始末、Wi-Fi OFF、30秒待機、再接続となる
 - 24時間の接続失敗でheapが減り続けない
 - 新しいdevice WebSocketが古い接続を置き換える
+- 閉じきらない古い接続が残っていても、新しい接続へ送れる
 - APIが仕様どおり202、400、401、503、500を返す
 - Durable Objectのhibernate後もdevice socketを再取得できる
 - Alarmの各段階へ例外を入れても二重送信しない
