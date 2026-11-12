@@ -67,9 +67,8 @@ extension APIClient {
             case 500: return .serverError
             default: return .unexpected(http.statusCode)
             }
-        } catch let e as DecodingError {
+        } catch is DecodingError {
             return .unexpected(-1)  // 200 だが形式が想定外
-            _ = e
         } catch {
             return .network(error.localizedDescription)
         }

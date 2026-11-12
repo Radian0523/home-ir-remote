@@ -3,7 +3,7 @@ import Foundation
 // design.md §5.4 のエアコン設定。JSON の値と列挙値の文字列を一致させる。
 // fan は文字列 "1" 〜 "3"（数値ではない）。quiet と 4 はリモコンに存在しないため持たない（ADR-019）。
 
-enum Mode: String, Codable, CaseIterable, Identifiable {
+enum Mode: String, Codable, CaseIterable, Identifiable, Sendable {
     case auto, cool, dry, heat, fan
     var id: String { rawValue }
     var label: String {
@@ -17,7 +17,7 @@ enum Mode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-enum Fan: String, Codable, CaseIterable, Identifiable {
+enum Fan: String, Codable, CaseIterable, Identifiable, Sendable {
     case auto
     case one = "1"
     case two = "2"
@@ -33,7 +33,7 @@ enum Fan: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-enum Vane: String, Codable, CaseIterable, Identifiable {
+enum Vane: String, Codable, CaseIterable, Identifiable, Sendable {
     case auto, highest, high, middle, low, lowest, swing
     var id: String { rawValue }
     var label: String {
@@ -69,7 +69,7 @@ extension Setting {
 }
 
 // 照明（オーデリック NRL-3321）のボタン。JSON の値は POST /light の button と一致させる（ADR-022）
-enum LightButton: String, Codable, CaseIterable, Identifiable {
+enum LightButton: String, Codable, CaseIterable, Identifiable, Sendable {
     case on, eco, mame, off
     var id: String { rawValue }
     var label: String {
