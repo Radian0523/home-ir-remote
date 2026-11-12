@@ -1,9 +1,15 @@
 import SwiftUI
 
 // エアコンの設定カード。温度を大きく見せ、モード・風量・風向は選択肢を常に表示して1タップで選べるようにする。
-// ここでは設定値（SettingStore）を変えるだけで、送信は操作画面下端の「今すぐ送る」が行う。
+// 電源ボタンだけは押した瞬間に送る（リモコンと同じ。設定を変えるのは稀で、ON/OFF が操作のほとんどのため）。
+// 温度・モード・風量・風向は設定値（SettingStore）を変えるだけで、送信は操作画面下端の「今すぐ送る」が行う。
 struct AirconCard: View {
     @EnvironmentObject private var store: SettingStore
+
+    /// 送信中か。電源ボタンにくるくるを出し、二重に押せないようにする
+    let sending: Bool
+    /// 今の設定を送る。電源ボタンを押したときに呼ぶ
+    let onPowerToggle: () -> Void
 
     private var setting: Setting { store.setting }
     private var tint: Color { setting.mode.color }
@@ -38,20 +44,34 @@ struct AirconCard: View {
                 Text(setting.power ? setting.mode.label : "停止中")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(setting.power ? tint : Color.secondary)
+                if !setting.power {
+                    // 電源ボタン1回で何が送られるかを先に見せる
+                    Text("電源ボタンで \(setting.mode.label) \(setting.temp)℃ で運転")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             Button {
                 store.setting.power.toggle()
+                onPowerToggle()
             } label: {
-                Image(systemName: "power")
-                    .font(.title3.weight(.semibold))
-                    .frame(width: 48, height: 48)
-                    .foregroundStyle(setting.power ? Color.white : Color.secondary)
-                    .background(setting.power ? tint : Color(.tertiarySystemFill), in: Circle())
+                ZStack {
+                    if sending {
+                        ProgressView().tint(setting.power ? Color.white : Color.secondary)
+                    } else {
+                        Image(systemName: "power").font(.title3.weight(.semibold))
+                    }
+                }
+                .frame(width: 56, height: 56)
+                .foregroundStyle(setting.power ? Color.white : Color.secondary)
+                .background(setting.power ? tint : Color(.tertiarySystemFill), in: Circle())
             }
             .buttonStyle(.plain)
+            .disabled(sending)
             .accessibilityLabel("電源")
             .accessibilityValue(setting.power ? "オン" : "オフ")
+            .accessibilityHint("押すとすぐエアコンに送ります")
         }
     }
 

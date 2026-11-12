@@ -35,7 +35,7 @@ struct ContentView: View {
                     }
 
                     LightSection(onResult: show)
-                    AirconCard()
+                    AirconCard(sending: sending) { Task { await send() } }
                     ScheduleSection(model: schedule) { at in await saveSchedule(at) }
                 }
                 .padding(.horizontal)

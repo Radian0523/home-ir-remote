@@ -31,6 +31,7 @@ open AirconRemote.xcodeproj
 
 ## 送信の扱い
 
+- 操作画面の電源ボタンは押した瞬間に送る（ON は画面の設定で運転、OFF は停止）。温度・モード・風量・風向は変えるだけで、下端の「今すぐ送る」で送る
 - `POST /command` の 202 は「Worker が受け付けて機器へ送った」であり、エアコンが受理した保証ではない（ADR-012）。画面には「送信要求を受け付けました」と出す
 - 503 `device_offline` は ESP32 が未接続。設計 §9 の障害判断表を参照
 - 予約の `executeAt` は UTC の秒精度 `YYYY-MM-DDTHH:MM:SSZ`。`ExecuteAtFormat` で生成
