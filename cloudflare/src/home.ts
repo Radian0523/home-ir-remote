@@ -16,6 +16,11 @@ export interface Env {
 const DEVICE_TAG = "device";
 const SCHEDULE_KEY = "schedule";
 
+/** device socket に付ける情報。複数残っているとき最新の接続を選ぶために使う */
+interface DeviceAttachment {
+  connectedAt: number; // ms
+}
+
 /** 永続化する業務データ。予約1件だけ（§5.2） */
 interface ScheduleRecord {
   executeAt: string; // UTC 正規形
@@ -50,6 +55,9 @@ export class Home extends DurableObject<Env> {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
     this.ctx.acceptWebSocket(server, [DEVICE_TAG]);
+    // Hibernation から戻っても残るよう、接続順を attachment に持たせる（送信先は最新を選ぶ）
+    const attachment: DeviceAttachment = { connectedAt: Date.now() };
+    server.serializeAttachment(attachment);
     log("device_connected");
 
     return new Response(null, { status: 101, webSocket: client });
@@ -71,26 +79,37 @@ export class Home extends DurableObject<Env> {
     log("device_disconnected", { error: true });
   }
 
-  /** 接続中の device socket を返す。なければ null */
-  private deviceSocket(): WebSocket | null {
-    const sockets = this.ctx.getWebSockets(DEVICE_TAG);
-    return sockets[0] ?? null;
+  /**
+   * 開いている device socket を新しい順に返す。
+   * 置き換えで close した古い接続は、相手（ESP32）がすでに捨てていると close の応答が来ず、
+   * 1006 で切れるまで（実測で約17分）getWebSockets() に残る。これを選ぶと send() が例外になり 503 を返してしまう
+   * （2026-11-12 の障害）。そのため OPEN のものだけを、接続が新しい順に並べる。
+   */
+  private deviceSockets(): WebSocket[] {
+    const connectedAt = (ws: WebSocket): number =>
+      (ws.deserializeAttachment() as DeviceAttachment | null)?.connectedAt ?? 0;
+    return this.ctx
+      .getWebSockets(DEVICE_TAG)
+      .filter((ws) => ws.readyState === WebSocket.OPEN)
+      .sort((a, b) => connectedAt(b) - connectedAt(a));
   }
 
   /**
    * 36文字または8文字を device socket へ1回だけ送る（§5.5）。
-   * 接続なし、閉じている、send() が同期的に例外 → false（503 相当）。送信できたら true（202 相当）。
+   * 最新の接続から順に試し、最初に send() できた1本で終える（同じ命令を2本へ送らない）。
+   * 送れる接続が無い → false（503 相当）。送信できたら true（202 相当）。
    * 設計どおり、ESP32 の処理完了やエアコンの受理は確認しない。
    */
   private sendToDevice(payload: string): boolean {
-    const ws = this.deviceSocket();
-    if (!ws) return false;
-    try {
-      ws.send(payload);
-      return true;
-    } catch {
-      return false;
+    for (const ws of this.deviceSockets()) {
+      try {
+        ws.send(payload);
+        return true;
+      } catch {
+        // 閉じかけていた。次に新しい接続を試す
+      }
     }
+    return false;
   }
 
   // ---- 一発予約（§5.2、ADR-011）------------------------------------------------

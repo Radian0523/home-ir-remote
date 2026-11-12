@@ -384,6 +384,7 @@ Cloudflareから見た最終生存時刻を得るためのアプリケーショ�
 - 即時操作を可能にしつつ、アイドル中のDurable Object実行を停止できる
 - Cloudflare runtimeのprotocol ping自動pongへ依存する
 - Hibernation復帰後は通常のJavaScript変数でなく`ctx.getWebSockets("device")`から接続を再取得する
+- `getWebSockets()`は閉じかけの接続も返すため、OPENのものを接続の新しい順に使う（2026-11-12、置き換え後の古い接続を選び続けて約2分間503になった障害の対策）
 - 503は未接続が判明している場合だけを示し、202はESP32の生存を保証しない
 
 参考: [Cloudflare Durable Objects — WebSocket Hibernation](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)

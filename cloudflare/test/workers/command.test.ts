@@ -55,4 +55,25 @@ describe("POST /command", () => {
     expect(offline.status).toBe(503);
     expect(await offline.json()).toEqual({ error: "device_offline" });
   });
+
+  // 2026-11-12 の障害の再現: ESP32 が古い接続を捨てて再接続すると、古い接続は close の応答が来ないまま
+  // getWebSockets() に残る。その間も新しい接続へ送れること
+  it("閉じきらない古い接続が残っていても、新しい接続へ送る", async () => {
+    // 古い接続: accept しない（相手が読まない）ので、DO からの close に応答が返らず閉じきらない
+    const stale = await SELF.fetch(WS_URL, { headers: { Upgrade: "websocket", Authorization: `Bearer ${env.DEVICE_TOKEN}` } });
+    expect(stale.status).toBe(101);
+
+    const ws = await connectDevice();
+    const received = new Promise<string>((resolve) => ws.addEventListener("message", (ev) => resolve(String(ev.data))));
+
+    for (let i = 0; i < 3; i++) {
+      const res = await post(good);
+      expect(res.status).toBe(202);
+    }
+    expect(await received).toBe("23CB26010020180A365800000000001000F5");
+    ws.close(1000, "test done");
+    // 後片付け: 古い接続も読み始めて閉じる（残すとテストの実行が終わらない）
+    stale.webSocket!.accept();
+    stale.webSocket!.close(1000, "test done");
+  });
 });
