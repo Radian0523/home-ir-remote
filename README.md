@@ -45,7 +45,7 @@ iPhone → Cloudflare Worker / Durable Object → WebSocket (TLS) → ESP32 → 
 | ハード | ESP32-WROOM-32, S8050 + 100Ω ×3 で IR LED 駆動（約 36 mA/個）, 回路図は CircuiTikZ |
 | ドキュメント | 設計書, ADR ×23, レビュー記録, 試験記録, 振り返り |
 
-テスト: Cloudflare 57 件（純粋関数 + workerd 上の統合）, iOS 24 件, ファームは host 側で `ir_frame.h` の単体テスト。
+テスト: Cloudflare 57 件（純粋関数 + workerd 上の統合）, iOS 28 件, ファームは host 側で `ir_frame.h` の単体テスト。
 
 ## リポジトリ構成
 
