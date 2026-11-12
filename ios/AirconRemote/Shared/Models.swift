@@ -15,6 +15,16 @@ enum Mode: String, Codable, CaseIterable, Identifiable, Sendable {
         case .fan: "送風"
         }
     }
+    /// SF Symbols の名前。操作画面のモードボタンに使う
+    var systemImage: String {
+        switch self {
+        case .auto: "arrow.triangle.2.circlepath"
+        case .cool: "snowflake"
+        case .dry: "drop"
+        case .heat: "sun.max"
+        case .fan: "wind"
+        }
+    }
 }
 
 enum Fan: String, Codable, CaseIterable, Identifiable, Sendable {

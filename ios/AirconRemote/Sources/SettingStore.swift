@@ -10,12 +10,21 @@ final class SettingStore: ObservableObject {
         }
     }
 
+    /// 最後にエアコンへ送って受け付けられた設定。画面の「未送信」表示に使う。
+    /// 保存は RemoteActions.sendAircon が行うので、ここでは画面に反映するだけ
+    @Published var lastSent: Setting?
+
+    var hasUnsentChanges: Bool { lastSent != setting }
+
     init() {
         setting = SharedStore.lastSetting
+        lastSent = SharedStore.lastSentSetting
     }
 
     func reload() {
         let saved = SharedStore.lastSetting
         if saved != setting { setting = saved }
+        let sent = SharedStore.lastSentSetting
+        if sent != lastSent { lastSent = sent }
     }
 }

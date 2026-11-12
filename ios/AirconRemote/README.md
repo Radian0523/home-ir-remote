@@ -1,6 +1,6 @@
 # AirconRemote (iOS)
 
-SwiftUI 製の操作アプリ。操作画面（設定値・今すぐ送る・一発予約を1画面に集約）と設定画面の 2 画面。
+SwiftUI 製の操作アプリ。操作画面（照明・エアコン設定・一発予約をカードで1画面に集約し、「今すぐ送る」は下端に固定）と設定画面の 2 画面。
 アプリを開かずに操作できるよう、App Intents・ウィジェット・コントロールも持つ（ADR-023）。
 
 ## 生成と実行
@@ -12,7 +12,7 @@ xcodegen generate
 open AirconRemote.xcodeproj
 ```
 
-`AirconRemote.xcodeproj` は生成物なので gitignore 済み。テストは `AirconRemoteTests`（24 件）。
+`AirconRemote.xcodeproj` は生成物なので gitignore 済み。テストは `AirconRemoteTests`（28 件）。
 
 実機では `AirconRemote` と `AirconWidgets` の両ターゲットで同じ Team を選ぶ。
 
@@ -23,7 +23,9 @@ open AirconRemote.xcodeproj
 | APP_TOKEN | Keychain（共有グループ） | UserDefaults や設定ファイルには置かない |
 | Worker の URL | Keychain（共有グループ） | 秘密ではないが、ウィジェット拡張から読むため |
 | 最後に送った設定 | Keychain（共有グループ） | エアコン状態の正本はアプリ側（ADR-015）。ショートカットからも読み書きする |
+| 最後に送って受け付けられた設定 | Keychain（共有グループ） | 操作画面の「未送信」表示。ショートカットから送ったときも更新する |
 | 最後の送信結果 | Keychain（共有グループ） | ウィジェットに1行で出す |
+| 照明で最後に送ったボタンと時刻 | UserDefaults | 操作画面で薄く示すだけ。照明の実際の状態ではない |
 
 共有グループは `<Team ID>.local.aircon.shared`。App Groups は無料 Apple ID で不安定なので使わない（ADR-023）。旧版で UserDefaults に置いた値は起動時に移す。
 

@@ -10,6 +10,7 @@ enum SharedStore {
         static let baseURL = "workerBaseURL"
         static let lastSetting = "lastSetting"
         static let lastResult = "lastResult"
+        static let lastSentSetting = "lastSentSetting"
     }
 
     // MARK: 接続設定
@@ -50,6 +51,15 @@ enum SharedStore {
     static var lastSetting: Setting {
         get { decode(Setting.self, Key.lastSetting) ?? .default }
         set { encode(newValue, Key.lastSetting) }
+    }
+
+    /// 最後にエアコンへ送って受け付けられた設定。アプリの「未送信」表示に使う。
+    /// 画面で編集中の値（lastSetting）とは別に持つ。ショートカットやウィジェットから送ったときもここを更新する
+    static var lastSentSetting: Setting? {
+        get { decode(Setting.self, Key.lastSentSetting) }
+        set {
+            if let newValue { encode(newValue, Key.lastSentSetting) } else { Keychain.delete(for: Key.lastSentSetting) }
+        }
     }
 
     // MARK: 最後の送信結果（ウィジェットに出す）

@@ -16,7 +16,10 @@ enum RemoteActions {
         let action = "エアコン \(Setting.summary(setting))"
         guard let client = SharedStore.client() else { return finish(.notConfigured, action: action) }
         let outcome = await client.sendCommand(setting)
-        if outcome.isSuccess { SharedStore.lastSetting = setting }
+        if outcome.isSuccess {
+            SharedStore.lastSetting = setting
+            SharedStore.lastSentSetting = setting
+        }
         return finish(outcome, action: action)
     }
 
