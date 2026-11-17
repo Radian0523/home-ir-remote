@@ -105,8 +105,8 @@ struct ContentView: View {
             .accessibilityValue(showMore ? "開いている" : "閉じている")
 
             if showMore {
-                AirconCard(sending: sending) { Task { await send() } }
-                ScheduleSection(model: schedule) { at in await saveSchedule(at) }
+                AirconCard()
+                ScheduleSection(model: schedule) { at, power in await saveSchedule(at, power: power) }
             }
         }
         .padding(.top, 4)
@@ -143,8 +143,10 @@ struct ContentView: View {
         show(Toast(outcome))
     }
 
-    private func saveSchedule(_ at: Date) async {
-        if let error = await schedule.save(executeAt: at, setting: store.setting) {
+    private func saveSchedule(_ at: Date, power: Bool) async {
+        var setting = store.setting
+        setting.power = power
+        if let error = await schedule.save(executeAt: at, setting: setting) {
             show(Toast(message: error, isSuccess: false))
         } else {
             show(Toast(message: "予約しました", isSuccess: true))

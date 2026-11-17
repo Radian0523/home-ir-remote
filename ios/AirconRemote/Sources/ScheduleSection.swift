@@ -59,9 +59,11 @@ final class ScheduleModel: ObservableObject {
 @MainActor
 struct ScheduleSection: View {
     @ObservedObject var model: ScheduleModel
-    let onSave: @MainActor (Date) async -> Void
+    /// 実行時刻と、その時刻に送る電源（ON なら上の設定で運転、OFF なら停止）
+    let onSave: @MainActor (Date, Bool) async -> Void
 
     @State private var preset: SchedulePreset = .in5
+    @State private var power = true
     /// 「時刻を指定」のときの時刻。デフォルトは5分後
     @State private var customAt = Date().addingTimeInterval(5 * 60)
 
@@ -81,6 +83,12 @@ struct ScheduleSection: View {
                 }
             }
 
+            Picker("予約する操作", selection: $power) {
+                Text("ON（上の設定で運転）").tag(true)
+                Text("OFF（停止）").tag(false)
+            }
+            .pickerStyle(.segmented)
+
             if preset == .custom {
                 DatePicker("実行時刻", selection: $customAt, in: Date()..., displayedComponents: [.date, .hourAndMinute])
             }
@@ -89,7 +97,7 @@ struct ScheduleSection: View {
                 let at = preset.executeAt(now: context.date, custom: customAt)
                 Button {
                     // 「5分後」は押した時点から数える
-                    Task { await onSave(preset.executeAt(now: Date(), custom: customAt)) }
+                    Task { await onSave(preset.executeAt(now: Date(), custom: customAt), power) }
                 } label: {
                     ZStack {
                         if model.loading { ProgressView() } else { Text(saveTitle(at)).fontWeight(.semibold) }
@@ -115,7 +123,7 @@ struct ScheduleSection: View {
         let time = Calendar.current.isDateInToday(at)
             ? at.formatted(date: .omitted, time: .shortened)
             : at.formatted(date: .abbreviated, time: .shortened)
-        return "上の設定を \(time) に予約"
+        return power ? "\(time) にONを予約" : "\(time) にOFFを予約"
     }
 }
 

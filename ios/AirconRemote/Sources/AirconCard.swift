@@ -1,15 +1,10 @@
 import SwiftUI
 
 // エアコンの設定カード。温度を大きく見せ、モード・風量・風向は選択肢を常に表示して1タップで選べるようにする。
-// 電源ボタンだけは押した瞬間に送る（リモコンと同じ。設定を変えるのは稀で、ON/OFF が操作のほとんどのため）。
-// 温度・モード・風量・風向は設定値（SettingStore）を変えるだけで、送信はこのカードの電源ボタンか上の「つける」が行う。
+// 電源ボタンは持たない。電源の状態に関係なくいつでも設定を変えられ、変えるのは設定値（SettingStore）だけ。
+// 送信は上の「つける」（この設定で運転）、予約は下の予約カードか上のよく使う予約が行う。
 struct AirconCard: View {
     @EnvironmentObject private var store: SettingStore
-
-    /// 送信中か。電源ボタンにくるくるを出し、二重に押せないようにする
-    let sending: Bool
-    /// 今の設定を送る。電源ボタンを押したときに呼ぶ
-    let onPowerToggle: () -> Void
 
     private var setting: Setting { store.setting }
     private var tint: Color { setting.mode.color }
@@ -17,20 +12,15 @@ struct AirconCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
-
-            VStack(alignment: .leading, spacing: 14) {
-                temperature
-                field("モード") { modes }
-                field("風量") {
-                    Picker("風量", selection: $store.setting.fan) {
-                        ForEach(Fan.allCases) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
+            temperature
+            field("モード") { modes }
+            field("風量") {
+                Picker("風量", selection: $store.setting.fan) {
+                    ForEach(Fan.allCases) { Text($0.label).tag($0) }
                 }
-                field("風向") { vanes }
+                .pickerStyle(.segmented)
             }
-            .disabled(!setting.power)
-            .opacity(setting.power ? 1 : 0.35)
+            field("風向") { vanes }
         }
         .card()
         .animation(.easeOut(duration: 0.2), value: setting)
@@ -38,40 +28,11 @@ struct AirconCard: View {
     }
 
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("エアコン").font(.headline)
-                Text(setting.power ? setting.mode.label : "停止中")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(setting.power ? tint : Color.secondary)
-                if !setting.power {
-                    // 電源ボタン1回で何が送られるかを先に見せる
-                    Text("電源ボタンで \(setting.mode.label) \(setting.temp)℃ で運転")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            Button {
-                store.setting.power.toggle()
-                onPowerToggle()
-            } label: {
-                ZStack {
-                    if sending {
-                        ProgressView().tint(setting.power ? Color.white : Color.secondary)
-                    } else {
-                        Image(systemName: "power").font(.title3.weight(.semibold))
-                    }
-                }
-                .frame(width: 56, height: 56)
-                .foregroundStyle(setting.power ? Color.white : Color.secondary)
-                .background(setting.power ? tint : Color(.tertiarySystemFill), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(sending)
-            .accessibilityLabel("電源")
-            .accessibilityValue(setting.power ? "オン" : "オフ")
-            .accessibilityHint("押すとすぐエアコンに送ります")
+        VStack(alignment: .leading, spacing: 2) {
+            Text("エアコンの設定").font(.headline)
+            Text(store.hasUnsentChanges ? "変更は上の「つける」で送られます" : "上の「つける」でこの設定で運転します")
+                .font(.caption)
+                .foregroundStyle(store.hasUnsentChanges ? tint : Color.secondary)
         }
     }
 
