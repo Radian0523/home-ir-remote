@@ -130,12 +130,12 @@ struct AirconOffIntent: AppIntent {
     }
 }
 
-// MARK: - 予約（最大1件、新規は置き換え。ADR-011）
+// MARK: - 予約（最大2件。満杯ならエラー。ADR-024）
 
 struct ScheduleAirconIntent: AppIntent {
     static var title: LocalizedStringResource = "エアコンを予約"
     static var description = IntentDescription(
-        "指定した時刻にエアコンの設定を送る予約をします。予約は1件だけで、既存の予約は置き換わります。指定しなかった項目は前回送った設定を使います。")
+        "指定した時刻にエアコンの設定を送る予約をします。予約は2件まで持てます。指定しなかった項目は前回送った設定を使います。")
 
     @Parameter(title: "実行時刻")
     var date: Date
@@ -170,14 +170,14 @@ struct ScheduleAirconIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard date > Date() else { throw RemoteIntentError(message: "実行時刻は未来の時刻にしてください") }
         let setting = try overridingLastSetting(power: power, mode: mode, temp: temp, fan: fan, vane: vane)
-        let record = try await scheduled(RemoteActions.putSchedule(executeAt: date, setting: setting))
-        return .result(dialog: IntentDialog(stringLiteral: "予約しました: \(record?.summary ?? Setting.summary(setting))"))
+        let record = try await scheduled(RemoteActions.addSchedule(executeAt: date, setting: setting))
+        return .result(dialog: IntentDialog(stringLiteral: "予約しました: \(record.summary)"))
     }
 }
 
 struct SleepTimerIntent: AppIntent {
     static var title: LocalizedStringResource = "エアコンのおやすみタイマー"
-    static var description = IntentDescription("指定した分数のあとにエアコンを停止する予約をします。既存の予約は置き換わります。")
+    static var description = IntentDescription("指定した分数のあとにエアコンを停止する予約をします。予約は2件まで持てます。")
 
     @Parameter(title: "何分後", default: 60)
     var minutes: Int
@@ -194,7 +194,7 @@ struct SleepTimerIntent: AppIntent {
             throw RemoteIntentError(message: "分数は\(SleepTimer.range.lowerBound)〜\(SleepTimer.range.upperBound)で指定してください")
         }
         let setting = try overridingLastSetting(power: false)
-        _ = try await scheduled(RemoteActions.putSchedule(executeAt: executeAt, setting: setting))
+        _ = try await scheduled(RemoteActions.addSchedule(executeAt: executeAt, setting: setting))
         let time = executeAt.formatted(date: .omitted, time: .shortened)
         return .result(dialog: IntentDialog(stringLiteral: "\(minutes)分後（\(time)）にエアコンを停止する予約をしました"))
     }
@@ -202,13 +202,13 @@ struct SleepTimerIntent: AppIntent {
 
 struct CancelScheduleIntent: AppIntent {
     static var title: LocalizedStringResource = "エアコンの予約を取り消す"
-    static var description = IntentDescription("エアコンの予約を取り消します。")
+    static var description = IntentDescription("エアコンの予約をすべて取り消します。")
 
     init() {}
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        _ = try await scheduled(RemoteActions.deleteSchedule())
-        return .result(dialog: "予約を取り消しました")
+        _ = try await scheduled(RemoteActions.deleteAllSchedules())
+        return .result(dialog: "予約をすべて取り消しました")
     }
 }
 
@@ -219,8 +219,7 @@ struct GetScheduleIntent: AppIntent {
     init() {}
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-        let record = try await scheduled(RemoteActions.getSchedule())
-        let text = record?.summary ?? "予約なし"
+        let text = try await scheduled(RemoteActions.getSchedules()).summary
         return .result(value: text, dialog: IntentDialog(stringLiteral: text))
     }
 }

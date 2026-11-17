@@ -88,8 +88,9 @@ struct AirconWidgetView: View {
 
     @ViewBuilder private var scheduleLine: some View {
         Group {
-            if let record = entry.schedule, let at = ExecuteAtFormat.date(from: record.executeAt) {
-                Label("\(at.formatted(date: .omitted, time: .shortened)) \(record.setting.power ? "運転" : "停止")", systemImage: "clock")
+            if let record = entry.schedules.first, let at = ExecuteAtFormat.date(from: record.executeAt) {
+                let more = entry.schedules.count > 1 ? " ほか\(entry.schedules.count - 1)件" : ""
+                Label("\(at.formatted(date: .omitted, time: .shortened)) \(record.setting.power ? "運転" : "停止")\(more)", systemImage: "clock")
             } else if entry.scheduleUnknown {
                 Label("予約を取得できません", systemImage: "clock.badge.questionmark")
             } else {

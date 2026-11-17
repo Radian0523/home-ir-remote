@@ -14,7 +14,7 @@
 - iPhoneからエアコンを即時操作する
 - 外出先から操作する
 - 電源、モード、温度、風量、風向を指定する
-- 一発予約を1件だけ設定・確認・取消する
+- 一発予約を最大2件まで設定・確認・取消する（ADR-024）
 - 照明（オーデリック NRL-3321 のリモコンで動く天井照明）を全灯・ECO・常夜灯・消灯の4ボタンで即時操作する（ADR-022）
 - ショートカット、Siri、Spotlight、アクションボタン、ウィジェット、コントロールセンターから同じ操作を呼ぶ（ADR-023）
 
@@ -273,10 +273,11 @@ USBアダプタで運用している間はシリアルログが見えない。�
 
 ### 5.2 永続データと一発予約
 
-永続化する業務データは予約1件だけとする。
+永続化する業務データは予約の一覧（最大2件、executeAtの早い順、ADR-024）だけとする。1件の形は次のとおり。
 
 ```json
 {
+  "id": "0b6c2f5e-3c1a-4f7e-9d0a-5b7f3e2a1c9d",
   "executeAt": "2026-09-13T18:00:00Z",
   "setting": {
     "power": true,
@@ -290,20 +291,22 @@ USBアダプタで運用している間はシリアルログが見えない。�
 ```
 
 - `executeAt`はUTCの絶対時刻とする
+- `id`はWorkerが受付時にUUIDで付ける
 - `payload`は予約受付時に生成して保存する
-- 新しい予約は古い予約を置き換える
-- キャンセル時は予約レコードとAlarmを削除する
+- すでに2件あれば新しい予約は受け付けない（409 `schedule_full`）。古い予約を置き換えない
+- Alarmは1本だけなので、常に一番早い予約の時刻に合わせる。一覧の保存とAlarmの設定・削除は1つのトランザクションで行う
+- 1件の取消は一覧から外してAlarmを残りに合わせる。全取消は一覧とAlarmを削除する
 - エアコンの現在状態、命令履歴、キューは保存しない
 
-`PUT /schedule`の`executeAt`は、UTCの正規形`YYYY-MM-DDTHH:mm:ssZ`だけを受理する。形式一致後に日時としてパースし、各UTC成分が入力と一致することを確認する。形式不一致、パース不能、存在しない日時、または検証時点のCloudflare時刻以下ならHTTP 400 `bad_request`とし、Alarmを作成・変更しない。未来側の独自上限は設けない。
+`POST /schedule`の`executeAt`は、UTCの正規形`YYYY-MM-DDTHH:mm:ssZ`だけを受理する。形式一致後に日時としてパースし、各UTC成分が入力と一致することを確認する。形式不一致、パース不能、存在しない日時、または検証時点のCloudflare時刻以下ならHTTP 400 `bad_request`とし、Alarmを作成・変更しない。未来側の独自上限は設けない。
 
 Alarm handlerの順序を次に固定する。
 
 ```text
-予約を読む
-→ 予約がなければ終了
-→ 予約をストレージから削除し、削除完了を待つ
-→ ESP32が接続中ならpayloadを1回だけsend()
+予約の一覧を読む
+→ 時刻が来た予約がなければ、Alarmを一番早い予約に張り直して終了
+→ 時刻が来た予約を一覧から削除し、Alarmを残りの一番早い予約に合わせ、完了を待つ
+→ ESP32が接続中なら、時刻が来た予約のpayloadを早い順に1回ずつsend()
 → 未接続またはsend()例外はログに記録し、例外を外へ投げず終了
 ```
 
@@ -349,26 +352,30 @@ iOSアプリは操作ごとに全項目を送る。
 | `GET /device/ws` | ESP32 | WebSocket upgrade。認証成功で101。新接続を正とする |
 | `POST /command` | iPhone | 即時操作。設定を36文字へ変換してdevice socketへ書く |
 | `POST /light` | iPhone | 照明の即時操作。`{ "button": "on" \| "off" \| "eco" \| "mame" }`を8文字へ変換してdevice socketへ書く |
-| `GET /schedule` | iPhone | 予約1件または`null`を返す |
-| `PUT /schedule` | iPhone | 予約を作成または置換する |
-| `DELETE /schedule` | iPhone | 予約とAlarmを削除する |
+| `GET /schedule` | iPhone | 予約を早い順の配列で返す（なければ`[]`） |
+| `POST /schedule` | iPhone | 予約を1件追加する。2件あれば409 `schedule_full` |
+| `DELETE /schedule/{id}` | iPhone | 予約を1件取り消す。無い`id`も200 |
+| `DELETE /schedule` | iPhone | 全予約とAlarmを削除する |
 
-`GET /schedule`の200 responseは、予約がある場合だけ次の形式とする。内部送信用の`payload`は返さない。
+`GET /schedule`の200 responseは次の形式の配列とする。`POST /schedule`は追加した1件を同じ形で返す。内部送信用の`payload`は返さない。
 
 ```json
-{
-  "executeAt": "2026-09-13T18:00:00Z",
-  "setting": {
-    "power": true,
-    "mode": "cool",
-    "temp": 26,
-    "fan": "auto",
-    "vane": "auto"
+[
+  {
+    "id": "0b6c2f5e-3c1a-4f7e-9d0a-5b7f3e2a1c9d",
+    "executeAt": "2026-09-13T18:00:00Z",
+    "setting": {
+      "power": true,
+      "mode": "cool",
+      "temp": 26,
+      "fan": "auto",
+      "vane": "auto"
+    }
   }
-}
+]
 ```
 
-予約がなければ200 `null`を返す。`null`は「現在有効な予約がない」ことだけを表し、発火済みとキャンセル済みを区別しない。予約履歴は保存しない。
+予約がなければ200 `[]`を返す。発火済みとキャンセル済みは区別しない。予約履歴は保存しない。
 
 `POST /command`と`POST /light`の結果は次のとおり。`/light`の400は`button`が4値以外の場合。
 
@@ -389,7 +396,7 @@ HTTP 202はESP32の処理完了やエアコンの受理を意味しない。ESP3
 - `device_connected` / `device_disconnected`
 - `command_sent` / `command_offline`
 - `light_sent` / `light_offline`（`button`を付ける）
-- `schedule_set` / `schedule_deleted`
+- `schedule_set` / `schedule_full` / `schedule_deleted`
 - `schedule_fired_sent` / `schedule_fired_offline`
 - `server_error`
 
@@ -402,9 +409,10 @@ Bearer token、36文字・8文字payload、エアコン設定、heartbeat成功�
 - 設定値の正本を端末へローカル保存する
 - 操作ごとに全設定を送る
 - 202は「送信要求を受け付けました」と表示し、「エアコンが動きました」と表示しない
-- 予約はGET、PUT、DELETEの3操作だけとし、操作画面の中に置く（別画面は設定だけ）
+- 予約は一覧取得・1件追加・1件取消・全取消だけとし、操作画面の中に置く（別画面は設定だけ）
 - 照明は操作画面の先頭に4ボタン（全灯、ECO、常夜灯、消灯）を置き、押したボタンを`POST /light`で1回だけ送る。照明の状態は保存も表示もしない
-- 予約は最大1件で、新規保存は既存予約を置き換える
+- 予約は最大2件。予約中のものは操作画面上部に並べ、1件ずつ取り消せる。2件あるときの追加はエラーとして伝える
+- 操作画面は、よく使う操作（照明4ボタン、エアコンの「つける」「けす」、「7:20にON」「7時間20分後にON」「10分後にOFF」の予約）を上に置き、細かい設定と時刻を選ぶ予約は「その他の操作」に折りたたむ
 - `executeAt`はUTCへ変換し、小数秒なしの`YYYY-MM-DDTHH:mm:ssZ`で送る
 - LAN探索、Bonjour、ローカルネットワーク権限を使わない
 - APP_TOKENはアプリの設定画面で一度入力し、Keychain（ウィジェット拡張と共有するアクセスグループ）へ保存する。UserDefaults、ソースコード、リポジトリへ保存しない
@@ -418,10 +426,10 @@ App Intents（`Shared/Intents.swift`）を iOS 側の操作 API とし、アプ�
 | 照明を操作 | `POST /light` | `button` を1回送る |
 | エアコンを運転 | `POST /command` | モード・温度・風量・風向は省略可。省略は前回の設定で補い、`power: true` |
 | エアコンを停止 | `POST /command` | 前回の設定で `power: false` |
-| エアコンを予約 | `PUT /schedule` | 時刻と設定（省略は前回の設定）。既存の予約を置き換える |
-| おやすみタイマー | `PUT /schedule` | n 分後（1〜720）に前回の設定で `power: false` |
-| 予約を取り消す | `DELETE /schedule` | |
-| 予約を確認 | `GET /schedule` | 文章で返す（予約なしは「予約なし」） |
+| エアコンを予約 | `POST /schedule` | 時刻と設定（省略は前回の設定）。2件あればエラー |
+| おやすみタイマー | `POST /schedule` | n 分後（1〜720）に前回の設定で `power: false` |
+| 予約を取り消す | `DELETE /schedule` | すべて取り消す |
+| 予約を確認 | `GET /schedule` | 1件1行の文章で返す（予約なしは「予約なし」） |
 
 入口:
 
@@ -445,6 +453,7 @@ App Intents（`Shared/Intents.swift`）を iOS 側の操作 API とし、アプ�
 |---|---|
 | 400 | アプリの入力生成の不具合 |
 | 401 | APP_TOKEN設定不一致 |
+| 409 | 予約が2件ある。どれかを取り消してから入れる |
 | 503 | ESP32の電源、家庭Wi-Fi、接続を確認 |
 | 500 | Cloudflareログを確認 |
 
@@ -572,7 +581,7 @@ Emitter ─────────── GND
 | 503が10分以上続く、または繰り返す | ESP32が自力で戻れていない | ESP32をMacへつなぎ、`diag`行（§4.10）で再起動理由と失敗段階を確認する |
 | 予約だけ動かない | 予約、Alarm、発火時接続のいずれか | `GET /schedule`、次に予約発火ログを確認 |
 
-管理対象は、Workerプロジェクト1つ、Durable Object 1個、secret 2つ、予約1件、ESP32ファーム1つ、iOSアプリ1つだけとする。
+管理対象は、Workerプロジェクト1つ、Durable Object 1個、secret 2つ、予約最大2件、ESP32ファーム1つ、iOSアプリ1つだけとする。
 
 ## 10. 検証と完了条件
 

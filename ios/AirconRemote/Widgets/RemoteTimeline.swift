@@ -2,24 +2,25 @@ import SwiftUI
 import WidgetKit
 
 // ウィジェットに出す内容。前回の設定・最後の操作は SharedStore（Keychain 共有グループ）から、
-// 予約は GET /schedule から取る。照明の状態は誰にもわからないので出さない（ADR-022）。
+// 予約は GET /schedule（一覧）から取る。照明の状態は誰にもわからないので出さない（ADR-022）。
 struct RemoteEntry: TimelineEntry {
     var date: Date
     var configured: Bool
     var setting: Setting
-    var schedule: ScheduleRecord?
+    /// 予約（早い順）
+    var schedules: [ScheduleRecord]
     var scheduleUnknown: Bool
     var lastResult: LastResult?
 
     static let placeholder = RemoteEntry(
         date: .now, configured: true,
         setting: Setting(power: true, mode: .cool, temp: 26, fan: .auto, vane: .auto),
-        schedule: nil, scheduleUnknown: false, lastResult: nil)
+        schedules: [], scheduleUnknown: false, lastResult: nil)
 
     static func local() -> RemoteEntry {
         RemoteEntry(
             date: .now, configured: SharedStore.client() != nil, setting: SharedStore.lastSetting,
-            schedule: nil, scheduleUnknown: false, lastResult: SharedStore.lastResult)
+            schedules: [], scheduleUnknown: false, lastResult: SharedStore.lastResult)
     }
 }
 
@@ -37,14 +38,14 @@ struct RemoteProvider: TimelineProvider {
         Task {
             var entry = RemoteEntry.local()
             if fetchSchedule && entry.configured {
-                switch await RemoteActions.getSchedule() {
-                case .ok(let record): entry.schedule = record
+                switch await RemoteActions.getSchedules() {
+                case .ok(let list): entry.schedules = list
                 default: entry.scheduleUnknown = true
                 }
             }
-            // 30 分ごと。予約があればその直後にも更新して「予約なし」に戻す
+            // 30 分ごと。予約があれば一番早い予約の直後にも更新して表示を進める
             var next = Date().addingTimeInterval(30 * 60)
-            if let record = entry.schedule, let at = ExecuteAtFormat.date(from: record.executeAt), at > Date() {
+            if let record = entry.schedules.first, let at = ExecuteAtFormat.date(from: record.executeAt), at > Date() {
                 next = min(next, at.addingTimeInterval(60))
             }
             completion(Timeline(entries: [entry], policy: .after(next)))

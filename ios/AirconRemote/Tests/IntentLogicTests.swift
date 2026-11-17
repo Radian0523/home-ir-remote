@@ -55,8 +55,10 @@ final class IntentLogicTests: XCTestCase {
     }
 
     func testScheduleSummaryContainsTheSetting() {
-        let record = ScheduleRecord(executeAt: "2026-11-06T14:00:00Z", setting: base)
+        let record = ScheduleRecord(id: "a", executeAt: "2026-11-06T14:00:00Z", setting: base)
         XCTAssertTrue(record.summary.hasSuffix("電源OFF"))
+        XCTAssertEqual([ScheduleRecord]().summary, "予約なし")
+        XCTAssertEqual([record, record].summary.split(separator: "\n").count, 2)
     }
 
     func testLastResultRoundTrip() throws {

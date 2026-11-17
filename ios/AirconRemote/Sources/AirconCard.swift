@@ -2,7 +2,7 @@ import SwiftUI
 
 // エアコンの設定カード。温度を大きく見せ、モード・風量・風向は選択肢を常に表示して1タップで選べるようにする。
 // 電源ボタンだけは押した瞬間に送る（リモコンと同じ。設定を変えるのは稀で、ON/OFF が操作のほとんどのため）。
-// 温度・モード・風量・風向は設定値（SettingStore）を変えるだけで、送信は操作画面下端の「今すぐ送る」が行う。
+// 温度・モード・風量・風向は設定値（SettingStore）を変えるだけで、送信はこのカードの電源ボタンか上の「つける」が行う。
 struct AirconCard: View {
     @EnvironmentObject private var store: SettingStore
 

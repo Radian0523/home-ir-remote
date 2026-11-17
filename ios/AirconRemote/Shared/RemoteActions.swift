@@ -23,23 +23,30 @@ enum RemoteActions {
         return finish(outcome, action: action)
     }
 
-    // MARK: 予約（最大1件、置き換え。ADR-011）
+    // MARK: 予約（最大2件、ADR-024）
 
-    static func getSchedule() async -> ScheduleOutcome<ScheduleRecord?> {
+    static func getSchedules() async -> ScheduleOutcome<[ScheduleRecord]> {
         guard let client = SharedStore.client() else { return .notConfigured }
-        return await client.getSchedule()
+        return await client.getSchedules()
     }
 
-    static func putSchedule(executeAt: Date, setting: Setting) async -> ScheduleOutcome<ScheduleRecord?> {
+    static func addSchedule(executeAt: Date, setting: Setting) async -> ScheduleOutcome<ScheduleRecord> {
         guard let client = SharedStore.client() else { return .notConfigured }
-        let outcome = await client.putSchedule(executeAt: executeAt, setting: setting)
+        let outcome = await client.addSchedule(executeAt: executeAt, setting: setting)
         if case .ok = outcome { WidgetCenter.shared.reloadAllTimelines() }
         return outcome
     }
 
-    static func deleteSchedule() async -> ScheduleOutcome<Bool> {
+    static func deleteSchedule(id: String) async -> ScheduleOutcome<Bool> {
         guard let client = SharedStore.client() else { return .notConfigured }
-        let outcome = await client.deleteSchedule()
+        let outcome = await client.deleteSchedule(id: id)
+        if case .ok = outcome { WidgetCenter.shared.reloadAllTimelines() }
+        return outcome
+    }
+
+    static func deleteAllSchedules() async -> ScheduleOutcome<Bool> {
+        guard let client = SharedStore.client() else { return .notConfigured }
+        let outcome = await client.deleteAllSchedules()
         if case .ok = outcome { WidgetCenter.shared.reloadAllTimelines() }
         return outcome
     }
@@ -72,6 +79,13 @@ extension Setting {
         if let fan { s.fan = fan }
         if let vane { s.vane = vane }
         return s
+    }
+}
+
+extension Array where Element == ScheduleRecord {
+    /// 「11/6 23:00 冷房 26℃ …」を改行でつないだもの。空なら「予約なし」
+    var summary: String {
+        isEmpty ? "予約なし" : map(\.summary).joined(separator: "\n")
     }
 }
 

@@ -1,6 +1,6 @@
 # AirconRemote (iOS)
 
-SwiftUI 製の操作アプリ。操作画面（照明・エアコン設定・一発予約をカードで1画面に集約し、「今すぐ送る」は下端に固定）と設定画面の 2 画面。
+SwiftUI 製の操作アプリ。操作画面（予約中の一覧、照明4ボタン、エアコンのつける/けすとよく使う予約3つを上に置き、細かいエアコン設定と予約は下に折りたたむ）と設定画面の 2 画面。
 アプリを開かずに操作できるよう、App Intents・ウィジェット・コントロールも持つ（ADR-023）。
 
 ## 生成と実行
@@ -12,7 +12,7 @@ xcodegen generate
 open AirconRemote.xcodeproj
 ```
 
-`AirconRemote.xcodeproj` は生成物なので gitignore 済み。テストは `AirconRemoteTests`（28 件）。
+`AirconRemote.xcodeproj` は生成物なので gitignore 済み。テストは `AirconRemoteTests`（34 件）。
 
 実機では `AirconRemote` と `AirconWidgets` の両ターゲットで同じ Team を選ぶ。
 
@@ -31,7 +31,8 @@ open AirconRemote.xcodeproj
 
 ## 送信の扱い
 
-- 操作画面の電源ボタンは押した瞬間に送る（ON は画面の設定で運転、OFF は停止）。温度・モード・風量・風向は変えるだけで、下端の「今すぐ送る」で送る
+- 操作画面の電源ボタンは押した瞬間に送る（ON は画面の設定で運転、OFF は停止）。上の「つける」は前回の設定で運転する。温度・モード・風量・風向は変えるだけで、次に電源ボタンか「つける」を押したときに送る
+- 一発予約は最大2件（ADR-024）。3件目は 409 `schedule_full` で断られるので、どれかを取り消してから入れる
 - `POST /command` の 202 は「Worker が受け付けて機器へ送った」であり、エアコンが受理した保証ではない（ADR-012）。画面には「送信要求を受け付けました」と出す
 - 503 `device_offline` は ESP32 が未接続。設計 §9 の障害判断表を参照
 - 予約の `executeAt` は UTC の秒精度 `YYYY-MM-DDTHH:MM:SSZ`。`ExecuteAtFormat` で生成
