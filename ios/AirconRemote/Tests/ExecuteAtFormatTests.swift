@@ -19,10 +19,19 @@ final class ExecuteAtFormatTests: XCTestCase {
         XCTAssertEqual(ExecuteAtFormat.date(from: s).map(ExecuteAtFormat.string(from:)), s)
     }
 
-    func testScheduleRecordEncodesExpectedKeys() throws {
-        let rec = ScheduleRecord(
+    func testNewScheduleEncodesExpectedKeys() throws {
+        let rec = NewSchedule(
             executeAt: "2026-09-13T18:00:00Z", setting: Setting(power: true, mode: .cool, temp: 26, fan: .auto, vane: .auto))
         let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(rec)) as? [String: Any])
         XCTAssertEqual(Set(obj.keys), ["executeAt", "setting"])
+    }
+
+    func testScheduleListDecodes() throws {
+        let json = """
+            [{"id":"a","executeAt":"2026-09-13T18:00:00Z","setting":{"power":false,"mode":"cool","temp":26,"fan":"auto","vane":"auto"}}]
+            """
+        let list = try JSONDecoder().decode([ScheduleRecord].self, from: Data(json.utf8))
+        XCTAssertEqual(list.map(\.id), ["a"])
+        XCTAssertFalse(list[0].setting.power)
     }
 }

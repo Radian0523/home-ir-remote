@@ -1,5 +1,5 @@
 // Worker 入口（design.md §5.5）。認証境界とルーティングだけを持つ。
-// 入口は6つ（§5.5）: GET /device/ws、POST /command、POST /light、GET/PUT/DELETE /schedule
+// 入口（§5.5）: GET /device/ws、POST /command、POST /light、GET/POST/DELETE /schedule、DELETE /schedule/{id}
 
 import { bearerMatches } from "./auth";
 import { Home, type Env } from "./home";
@@ -64,18 +64,26 @@ export default {
         const result = await stub.light(v.value);
         return result.ok ? json(202, { ok: true }) : json(503, { error: result.error });
       }
-      if (url.pathname === "/schedule") {
+      if (url.pathname === "/schedule" || url.pathname.startsWith("/schedule/")) {
         if (!(await bearerMatches(request.headers.get("Authorization"), env.APP_TOKEN))) {
           return json(401, { error: "unauthorized" });
         }
         const stub = env.HOME.get(env.HOME.idFromName("home"));
+        // DELETE /schedule/{id}: 1件だけ取り消す
+        if (url.pathname !== "/schedule") {
+          const id = decodeURIComponent(url.pathname.slice("/schedule/".length));
+          if (!id || id.includes("/")) return json(404, { error: "not_found" });
+          if (request.method !== "DELETE") return json(405, { error: "method_not_allowed" });
+          await stub.deleteSchedule(id);
+          return json(200, { ok: true });
+        }
         switch (request.method) {
           case "GET":
-            return json(200, await stub.getSchedule());
+            return json(200, await stub.getSchedules());
           case "DELETE":
-            await stub.deleteSchedule();
+            await stub.deleteAllSchedules();
             return json(200, { ok: true });
-          case "PUT": {
+          case "POST": {
             let body: unknown;
             try {
               body = await request.json();
@@ -88,7 +96,8 @@ export default {
             if (!t.ok) return json(400, { error: "bad_request" });
             const v = validateSetting(setting);
             if (!v.ok) return json(400, { error: "bad_request" });
-            return json(200, await stub.putSchedule(v.value, t.value.executeAt, t.value.epochMs));
+            const result = await stub.addSchedule(v.value, t.value.executeAt);
+            return result.ok ? json(200, result.value) : json(409, { error: result.error });
           }
           default:
             return json(405, { error: "method_not_allowed" });

@@ -1,21 +1,24 @@
 import SwiftUI
 
-// 一発予約（design.md §6）。GET / PUT / DELETE の3操作だけ。予約は最大1件で、新規保存は既存を置き換える。
-// 予約中の表示は操作画面上部のバナー、作成は下の方のカードに分けるため、状態はこのモデルで共有する。
+// 一発予約（design.md §6、ADR-024）。予約は最大2件。一覧の取得・1件追加・1件取り消しを行う。
+// 予約中の表示は操作画面上部のバナー、作成はよく使う予約ボタンと下の方のカードに分けるため、状態はこのモデルで共有する。
 @MainActor
 final class ScheduleModel: ObservableObject {
-    @Published private(set) var current: ScheduleRecord?
+    /// 予約（早い順）
+    @Published private(set) var schedules: [ScheduleRecord] = []
     @Published private(set) var loading = false
     /// 読み込み失敗の表示。保存・取り消しの結果はトーストで出す
     @Published private(set) var loadError: String?
+
+    var isFull: Bool { schedules.count >= ScheduleLimit.max }
 
     /// 未設定のときは何もしない（未設定の案内は操作画面側で出す）
     func load(configured: Bool) async {
         guard configured else { return }
         loading = true
         defer { loading = false }
-        switch await RemoteActions.getSchedule() {
-        case .ok(let rec): current = rec; loadError = nil
+        switch await RemoteActions.getSchedules() {
+        case .ok(let list): schedules = list; loadError = nil
         case let other: loadError = other.message
         }
     }
@@ -24,20 +27,31 @@ final class ScheduleModel: ObservableObject {
     func save(executeAt: Date, setting: Setting) async -> String? {
         loading = true
         defer { loading = false }
-        switch await RemoteActions.putSchedule(executeAt: executeAt, setting: setting) {
-        case .ok(let rec): current = rec; loadError = nil; return nil
+        switch await RemoteActions.addSchedule(executeAt: executeAt, setting: setting) {
+        case .ok(let rec):
+            schedules = (schedules + [rec]).sorted { $0.executeAt < $1.executeAt }
+            loadError = nil
+            return nil
+        case .full:
+            // ほかの端末やショートカットで増えていることがあるので読み直す
+            await reloadQuietly()
+            return ScheduleOutcome<ScheduleRecord>.full.message
         case let other: return other.message ?? "予約できませんでした"
         }
     }
 
     /// 成功なら nil、失敗なら表示する文言を返す
-    func cancel() async -> String? {
+    func cancel(id: String) async -> String? {
         loading = true
         defer { loading = false }
-        switch await RemoteActions.deleteSchedule() {
-        case .ok: current = nil; loadError = nil; return nil
+        switch await RemoteActions.deleteSchedule(id: id) {
+        case .ok: schedules.removeAll { $0.id == id }; loadError = nil; return nil
         case let other: return other.message ?? "取り消せませんでした"
         }
+    }
+
+    private func reloadQuietly() async {
+        if case .ok(let list) = await RemoteActions.getSchedules() { schedules = list }
     }
 }
 
@@ -56,7 +70,7 @@ struct ScheduleSection: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("予約").font(.headline)
                 Spacer()
-                Text("1件だけ。入れ直すと置き換え").font(.caption).foregroundStyle(.secondary)
+                Text("\(ScheduleLimit.max)件まで（いま\(model.schedules.count)件）").font(.caption).foregroundStyle(.secondary)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -101,11 +115,11 @@ struct ScheduleSection: View {
         let time = Calendar.current.isDateInToday(at)
             ? at.formatted(date: .omitted, time: .shortened)
             : at.formatted(date: .abbreviated, time: .shortened)
-        return model.current == nil ? "上の設定を \(time) に予約" : "予約を \(time) に置き換える"
+        return "上の設定を \(time) に予約"
     }
 }
 
-/// 予約中の1件を操作画面の上部に出す。取り消しもここから行う
+/// 予約中のもの（最大2件）を操作画面の上部に出す。取り消しは1件ずつここから行う
 struct ScheduleBanner: View {
     let record: ScheduleRecord
     let loading: Bool

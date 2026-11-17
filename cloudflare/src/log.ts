@@ -9,6 +9,7 @@ export type LogEvent =
   | "light_sent"
   | "light_offline"
   | "schedule_set"
+  | "schedule_full"
   | "schedule_deleted"
   | "schedule_fired_sent"
   | "schedule_fired_offline"

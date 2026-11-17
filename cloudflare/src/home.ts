@@ -1,6 +1,6 @@
 // Durable Object "home"（design.md §5.1、§5.2、ADR-018）。
 // ESP32 の device WebSocket を最大1本、Hibernation API で保持する。
-// device WebSocket の受け入れと置換、即時操作（エアコン・照明）、一発予約（1件）と Alarm を持つ。
+// device WebSocket の受け入れと置換、即時操作（エアコン・照明）、一発予約（最大2件、ADR-024）と Alarm を持つ。
 
 import { DurableObject } from "cloudflare:workers";
 import { encode, type Setting } from "./encoder";
@@ -14,15 +14,21 @@ export interface Env {
 }
 
 const DEVICE_TAG = "device";
-const SCHEDULE_KEY = "schedule";
+/** 予約の一覧（ADR-024） */
+const SCHEDULES_KEY = "schedules";
+/** 1件だけ持っていた頃（ADR-011）のキー。残っていれば一覧の1件として読む */
+const LEGACY_SCHEDULE_KEY = "schedule";
+/** 同時に持てる予約の数 */
+export const MAX_SCHEDULES = 2;
 
 /** device socket に付ける情報。複数残っているとき最新の接続を選ぶために使う */
 interface DeviceAttachment {
   connectedAt: number; // ms
 }
 
-/** 永続化する業務データ。予約1件だけ（§5.2） */
+/** 永続化する業務データ。予約1件分（§5.2）。最大 MAX_SCHEDULES 件を executeAt の早い順で持つ */
 interface ScheduleRecord {
+  id: string;
   executeAt: string; // UTC 正規形
   setting: Setting;
   payload: string; // 受付時に生成した36文字。後日のコード変更で予約内容が変わらないため
@@ -30,6 +36,7 @@ interface ScheduleRecord {
 
 /** API が返す形。payload は返さない（§5.5） */
 export interface ScheduleView {
+  id: string;
   executeAt: string;
   setting: Setting;
 }
@@ -112,49 +119,102 @@ export class Home extends DurableObject<Env> {
     return false;
   }
 
-  // ---- 一発予約（§5.2、ADR-011）------------------------------------------------
+  // ---- 一発予約（§5.2、ADR-024）-----------------------------------------------
 
-  /** GET /schedule。予約1件または null */
-  async getSchedule(): Promise<ScheduleView | null> {
-    const rec = await this.ctx.storage.get<ScheduleRecord>(SCHEDULE_KEY);
-    return rec ? { executeAt: rec.executeAt, setting: rec.setting } : null;
+  /** 保存されている予約を早い順で返す。旧形式（1件）が残っていれば id を付けて含める */
+  private async loadSchedules(): Promise<ScheduleRecord[]> {
+    const map = await this.ctx.storage.get<ScheduleRecord[] | Omit<ScheduleRecord, "id">>([SCHEDULES_KEY, LEGACY_SCHEDULE_KEY]);
+    const list = [...((map.get(SCHEDULES_KEY) as ScheduleRecord[] | undefined) ?? [])];
+    const legacy = map.get(LEGACY_SCHEDULE_KEY) as Omit<ScheduleRecord, "id"> | undefined;
+    if (legacy) list.push({ id: "legacy", ...legacy });
+    return list.sort((a, b) => Date.parse(a.executeAt) - Date.parse(b.executeAt));
   }
 
-  /** PUT /schedule。新しい予約は古い予約を置き換える。Alarm も置き換わる */
-  async putSchedule(setting: Setting, executeAt: string, epochMs: number): Promise<ScheduleView> {
-    const rec: ScheduleRecord = { executeAt, setting, payload: encode(setting) };
-    await this.ctx.storage.put(SCHEDULE_KEY, rec);
-    await this.ctx.storage.setAlarm(epochMs);
+  /**
+   * 一覧を保存し、Alarm を一番早い予約に合わせる。旧形式のキーはここで消す。
+   * トランザクションでまとめて書き、一覧と Alarm がずれた状態を残さない。
+   */
+  private async saveSchedules(list: ScheduleRecord[]): Promise<void> {
+    await this.ctx.storage.transaction(async (txn) => {
+      await txn.delete(LEGACY_SCHEDULE_KEY);
+      if (list.length === 0) {
+        await txn.delete(SCHEDULES_KEY);
+        await txn.deleteAlarm();
+      } else {
+        await txn.put(SCHEDULES_KEY, list);
+        await txn.setAlarm(Date.parse(list[0]!.executeAt));
+      }
+    });
+  }
+
+  private static view(rec: ScheduleRecord): ScheduleView {
+    return { id: rec.id, executeAt: rec.executeAt, setting: rec.setting };
+  }
+
+  /** GET /schedule。予約を早い順に並べた配列（なければ空配列） */
+  async getSchedules(): Promise<ScheduleView[]> {
+    return (await this.loadSchedules()).map(Home.view);
+  }
+
+  /** POST /schedule。予約を1件足す。すでに MAX_SCHEDULES 件あれば足さずに full を返す */
+  async addSchedule(setting: Setting, executeAt: string): Promise<{ ok: true; value: ScheduleView } | { ok: false; error: "schedule_full" }> {
+    const list = await this.loadSchedules();
+    if (list.length >= MAX_SCHEDULES) {
+      log("schedule_full");
+      return { ok: false, error: "schedule_full" };
+    }
+    const rec: ScheduleRecord = { id: crypto.randomUUID(), executeAt, setting, payload: encode(setting) };
+    list.push(rec);
+    list.sort((a, b) => Date.parse(a.executeAt) - Date.parse(b.executeAt));
+    await this.saveSchedules(list);
     log("schedule_set", { executeAt });
-    return { executeAt, setting };
+    return { ok: true, value: Home.view(rec) };
   }
 
-  /** DELETE /schedule。レコードと Alarm を削除する */
-  async deleteSchedule(): Promise<void> {
-    await this.ctx.storage.delete(SCHEDULE_KEY);
-    await this.ctx.storage.deleteAlarm();
+  /** DELETE /schedule/{id}。無い id でもエラーにしない（取り消し済みと区別しない） */
+  async deleteSchedule(id: string): Promise<void> {
+    const list = await this.loadSchedules();
+    const rest = list.filter((r) => r.id !== id);
+    if (rest.length === list.length) return;
+    await this.saveSchedules(rest);
     log("schedule_deleted");
+  }
+
+  /** DELETE /schedule。予約をすべて消し、Alarm も消す */
+  async deleteAllSchedules(): Promise<void> {
+    await this.saveSchedules([]);
+    log("schedule_deleted", { all: true });
   }
 
   /**
    * Alarm handler。順序は §5.2 に固定する。
-   *   読む → なければ終了 → 削除して完了を待つ → 接続中なら1回 send → 失敗は記録して正常終了
-   * 読み込み・削除で失敗した場合はまだ送っていないので、例外をそのまま投げて Alarm の再試行に任せる。
+   *   読む → 時刻が来たものがなければ Alarm を張り直して終了
+   *   → 来たものを一覧から削除し、残りに Alarm を合わせて完了を待つ
+   *   → 接続中なら来たものを早い順に1回ずつ send → 失敗は記録して正常終了
+   * 削除までに失敗した場合はまだ送っていないので、例外をそのまま投げて Alarm の再試行に任せる。
    * 削除が完了した後は何があっても例外を投げない（再試行で二重送信しないため、ADR-005）。
    */
   override async alarm(): Promise<void> {
-    const rec = await this.ctx.storage.get<ScheduleRecord>(SCHEDULE_KEY);
-    if (!rec) return;
-    await this.ctx.storage.delete(SCHEDULE_KEY);
+    const list = await this.loadSchedules();
+    const now = Date.now();
+    const due = list.filter((r) => Date.parse(r.executeAt) <= now);
+    const rest = list.filter((r) => Date.parse(r.executeAt) > now);
+    if (due.length === 0) {
+      if (rest.length > 0) await this.saveSchedules(rest);
+      return;
+    }
+    await this.saveSchedules(rest);
 
-    try {
-      if (this.sendToDevice(rec.payload)) {
-        log("schedule_fired_sent", { executeAt: rec.executeAt });
-      } else {
-        log("schedule_fired_offline", { executeAt: rec.executeAt });
+    for (const rec of due) {
+      try {
+        if (this.sendToDevice(rec.payload)) {
+          log("schedule_fired_sent", { executeAt: rec.executeAt });
+        } else {
+          log("schedule_fired_offline", { executeAt: rec.executeAt });
+        }
+      } catch (e) {
+        log("server_error", { where: "alarm", message: e instanceof Error ? e.message : String(e) });
       }
-    } catch (e) {
-      log("server_error", { where: "alarm", message: e instanceof Error ? e.message : String(e) });
     }
   }
 
